@@ -14,12 +14,15 @@ jobs:
           - os: ubuntu-latest
             artifact_name: clipboard-tool-linux
             executable: clipboard-tool
+            pyinstaller_args: "--hidden-import=pynput.keyboard._xorg --hidden-import=pynput.mouse._xorg"
           - os: macos-latest
             artifact_name: clipboard-tool-macos
             executable: clipboard-tool
+            pyinstaller_args: "--hidden-import=pynput.keyboard._darwin --hidden-import=pynput.mouse._darwin"
           - os: windows-latest
             artifact_name: clipboard-tool-windows
             executable: clipboard-tool.exe
+            pyinstaller_args: "--hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32"
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -37,7 +40,7 @@ jobs:
         run: uv sync
 
       - name: Build with PyInstaller
-        run: uv run pyinstaller --onefile --name clipboard-tool main.py
+        run: uv run pyinstaller --onefile --name clipboard-tool ${{ matrix.pyinstaller_args }} main.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
