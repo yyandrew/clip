@@ -54,6 +54,8 @@ jobs:
             --exclude-module unittest \
             --exclude-module pydoc \
             --exclude-module doctest \
+            --hidden-import PyQt6.QtSql \
+            --collect-all PyQt6 \
             ${{ matrix.pyinstaller_args }} \
             main.py
 
