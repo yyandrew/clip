@@ -182,76 +182,110 @@ class ClipboardApp(QMainWindow):
         else:
             query = QSqlQuery("SELECT type, content, blob_data, timestamp FROM history ORDER BY timestamp DESC LIMIT 50")
 
+        row_count = 0
         while query.next():
-            c_type = query.value(0)
-            content = query.value(1)
-            blob = query.value(2)
-            time_str = query.value(3)
+            row_count += 1
+            try:
+                c_type = query.value(0)
+                content = query.value(1)
+                blob = query.value(2)
+                time_str = query.value(3)
+                
+                # 调试：打印每行数据的类型
+                print(f"[DEBUG] row {row_count}: type={c_type}, content_type={type(content)}, blob_type={type(blob)}, blob_len={len(blob) if blob else 0}")
 
-            item = QListWidgetItem(self.list_widget)
+                item = QListWidgetItem(self.list_widget)
 
-            if c_type == 'image':
-                # 如果是图片，列表显示图标和时间
-                item.setText(f"🖼️ 图片记录 - {time_str}")
-                item.setData(Qt.ItemDataRole.UserRole, ('image', time_str))
-                
-                if blob is None or blob == '':
-                    item.setToolTip("图片数据缺失")
-                    continue
-                
-                # 兼容旧数据：曾被误存为 str(bytes_repr)，尝试还原为 bytes
-                if isinstance(blob, str):
-                    try:
-                        blob = ast.literal_eval(blob)
-                    except Exception:
-                        item.setToolTip("图片数据损坏")
-                        continue
-                
-                try:
-                    pixmap = QPixmap()
-                    if not pixmap.loadFromData(blob):
-                        print("[WARN] 无法加载图片数据")
-                        item.setToolTip("图片格式无效")
+                if c_type == 'image':
+                    item.setText(f"🖼️ 图片记录 - {time_str}")
+                    item.setData(Qt.ItemDataRole.UserRole, ('image', time_str))
+                    
+                    # 严格检查 blob 是否有效
+                    if blob is None:
+                        print("[WARN] blob is None")
+                        item.setToolTip("图片数据缺失")
+                        self.list_widget.addItem(item)
                         continue
                     
-                    if pixmap.isNull():
-                        print("[WARN] 图片数据为空")
+                    # 处理 PyQt6 QVariant 或空值
+                    blob_bytes = None
+                    if hasattr(blob, 'toByteArray'):
+                        blob_bytes = blob.toByteArray()
+                    elif isinstance(blob, (bytes, bytearray)):
+                        blob_bytes = bytes(blob)
+                    elif isinstance(blob, str):
+                        try:
+                            blob_bytes = ast.literal_eval(blob)
+                        except Exception:
+                            print("[WARN] blob str 解析失败")
+                            item.setToolTip("图片数据损坏")
+                            self.list_widget.addItem(item)
+                            continue
+                    else:
+                        print(f"[WARN] blob 类型不支持: {type(blob)}")
+                        item.setToolTip("图片数据类型错误")
+                        self.list_widget.addItem(item)
+                        continue
+                    
+                    if not blob_bytes or len(blob_bytes) == 0:
+                        print("[WARN] blob_bytes 为空")
                         item.setToolTip("图片数据为空")
+                        self.list_widget.addItem(item)
                         continue
                     
-                    scaled_pix = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio)
-                    if scaled_pix.isNull():
-                        print("[WARN] 图片缩放失败")
-                        item.setToolTip("图片处理失败")
-                        continue
+                    try:
+                        pixmap = QPixmap()
+                        if not pixmap.loadFromData(blob_bytes):
+                            print("[WARN] 无法加载图片数据")
+                            item.setToolTip("图片格式无效")
+                            self.list_widget.addItem(item)
+                            continue
+                        
+                        if pixmap.isNull():
+                            print("[WARN] 图片数据为空")
+                            item.setToolTip("图片数据为空")
+                            self.list_widget.addItem(item)
+                            continue
+                        
+                        scaled_pix = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio)
+                        if scaled_pix.isNull():
+                            print("[WARN] 图片缩放失败")
+                            item.setToolTip("图片处理失败")
+                            self.list_widget.addItem(item)
+                            continue
 
-                    ba = QByteArray()
-                    bu = QBuffer(ba)
-                    bu.open(QIODevice.OpenModeFlag.WriteOnly)
-                    if not scaled_pix.save(bu, "PNG"):
-                        print("[WARN] 图片编码失败")
-                        item.setToolTip("图片编码失败")
-                        continue
-                    b64 = ba.toBase64().data().decode()
+                        ba = QByteArray()
+                        bu = QBuffer(ba)
+                        bu.open(QIODevice.OpenModeFlag.WriteOnly)
+                        if not scaled_pix.save(bu, "PNG"):
+                            print("[WARN] 图片编码失败")
+                            item.setToolTip("图片编码失败")
+                            self.list_widget.addItem(item)
+                            continue
+                        b64 = ba.toBase64().data().decode()
 
-                    item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
-                except Exception as e:
-                    print(f"[ERROR] 图片预览生成失败: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    item.setToolTip("图片预览生成失败")
-            else:
-                # 如果是文本
-                short_text = content[:30].replace('\n', ' ')
-                if len(content) > 30:
-                    short_text += '...'
-                item.setText(f"📄 {short_text}\n[{time_str}]")
-                # 存储原始内容用于粘贴和删除
-                item.setData(Qt.ItemDataRole.UserRole, ('text', content))
-                # 文本的 ToolTip
-                item.setToolTip(f"完整内容:\n{content}")
-
-            self.list_widget.addItem(item)
+                        item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
+                    except Exception as e:
+                        print(f"[ERROR] 图片预览生成失败: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        item.setToolTip("图片预览生成失败")
+                    self.list_widget.addItem(item)
+                else:
+                    short_text = content[:30].replace('\n', ' ') if content else ''
+                    if content and len(content) > 30:
+                        short_text += '...'
+                    item.setText(f"📄 {short_text}\n[{time_str}]")
+                    item.setData(Qt.ItemDataRole.UserRole, ('text', content))
+                    item.setToolTip(f"完整内容:\n{content}")
+                    self.list_widget.addItem(item)
+            except Exception as e:
+                print(f"[ERROR] 处理第 {row_count} 行时出错: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        print(f"[DEBUG] refresh_list 完成，共 {row_count} 行")
 
     def eventFilter(self, source, event):
         # 让搜索框支持上下箭头切换列表项，列表支持 Enter 粘贴

@@ -39,13 +39,12 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Build with PyInstaller
+      - name: Build with PyInstaller (Debug - No Strip)
         shell: bash
         run: |
           uv run pyinstaller \
             --onefile \
             --name clipboard-tool \
-            --strip \
             --exclude-module matplotlib \
             --exclude-module numpy \
             --exclude-module scipy \
