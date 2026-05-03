@@ -2,14 +2,39 @@ import sys
 import ast
 import datetime
 import base64
+import traceback
+import logging
 from io import BytesIO
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget,
                              QLineEdit, QListWidget, QListWidgetItem, QLabel,
                              QSystemTrayIcon, QMenu, QToolTip)
 from PyQt6.QtGui import QAction, QPixmap, QImage
-from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray, QBuffer, QIODevice
+from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray, QBuffer, QIODevice, qInstallMessageHandler
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 from pynput.keyboard import Controller, Key
+
+# 设置日志
+logging.basicConfig(
+    filename='/tmp/clipboard-tool.log',
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def log_exception(exc_type, exc_value, exc_tb):
+    """全局异常钩子：捕获所有未处理异常并写入日志"""
+    err_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    logger.critical(f"未捕获异常:\n{err_msg}")
+    # 同时打印到终端
+    sys.__stderr__.write(err_msg)
+
+sys.excepthook = log_exception
+
+def qt_message_handler(mode, context, message):
+    """捕获 Qt 内部消息"""
+    logger.debug(f"Qt [{mode}]: {message}")
+
+qInstallMessageHandler(qt_message_handler)
 
 # 键盘控制器，用于模拟粘贴动作
 keyboard = Controller()
