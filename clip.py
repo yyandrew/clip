@@ -71,7 +71,11 @@ class ClipboardApp(QMainWindow):
         # 搜索框
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("🔍 搜索历史 (支持实时过滤)...")
-        self.search_bar.textChanged.connect(self.refresh_list)
+        # 添加防抖计时器，避免输入过快频繁刷新
+        self.search_timer = QTimer()
+        self.search_timer.setSingleShot(True)
+        self.search_timer.timeout.connect(self._do_refresh)
+        self.search_bar.textChanged.connect(self._on_search_text_changed)
         # 让搜索框拦截上下箭头，方便直接操作列表
         self.search_bar.installEventFilter(self)
         layout.addWidget(self.search_bar)
@@ -132,13 +136,24 @@ class ClipboardApp(QMainWindow):
 
         self.refresh_list()
 
+    def _on_search_text_changed(self, text):
+        """防抖处理搜索输入"""
+        self._pending_search_text = text
+        self.search_timer.start(300)  # 300ms 防抖
+
+    def _do_refresh(self):
+        """执行实际的搜索刷新"""
+        self.refresh_list(getattr(self, '_pending_search_text', ''))
+
     def refresh_list(self, search_text=""):
         self.list_widget.clear()
         if search_text:
             query = QSqlQuery()
             query.prepare("SELECT type, content, blob_data, timestamp FROM history WHERE content LIKE ? ORDER BY timestamp DESC LIMIT 50")
             query.addBindValue(f"%{search_text}%")
-            query.exec()
+            if not query.exec():
+                print(f"[ERROR] 搜索失败: {query.lastError().text()}")
+                return
         else:
             query = QSqlQuery("SELECT type, content, blob_data, timestamp FROM history ORDER BY timestamp DESC LIMIT 50")
 
@@ -154,26 +169,34 @@ class ClipboardApp(QMainWindow):
                 # 如果是图片，列表显示图标和时间
                 item.setText(f"🖼️ 图片记录 - {time_str}")
                 item.setData(Qt.ItemDataRole.UserRole, ('image', time_str))
-                # 关键：ToolTip 支持 HTML。我们将图片转为 Base64 嵌入 HTML
+                
+                if blob is None or blob == '':
+                    item.setToolTip("图片数据缺失")
+                    continue
+                
                 # 兼容旧数据：曾被误存为 str(bytes_repr)，尝试还原为 bytes
                 if isinstance(blob, str):
                     try:
                         blob = ast.literal_eval(blob)
                     except Exception:
-                        pass
-                pixmap = QPixmap()
-                pixmap.loadFromData(blob)
-                # 缩放图片用于预览，避免悬浮窗太大
-                scaled_pix = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio)
+                        item.setToolTip("图片数据损坏")
+                        continue
+                
+                try:
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(blob)
+                    scaled_pix = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio)
 
-                # 将缩放后的图片转为 Base64 字符串
-                ba = QByteArray()
-                bu = QBuffer(ba)
-                bu.open(QIODevice.OpenModeFlag.WriteOnly)
-                scaled_pix.save(bu, "PNG")
-                b64 = ba.toBase64().data().decode()
+                    ba = QByteArray()
+                    bu = QBuffer(ba)
+                    bu.open(QIODevice.OpenModeFlag.WriteOnly)
+                    scaled_pix.save(bu, "PNG")
+                    b64 = ba.toBase64().data().decode()
 
-                item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
+                    item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
+                except Exception as e:
+                    print(f"[ERROR] 图片预览生成失败: {e}")
+                    item.setToolTip("图片预览生成失败")
             else:
                 # 如果是文本
                 short_text = content[:30].replace('\n', ' ')
