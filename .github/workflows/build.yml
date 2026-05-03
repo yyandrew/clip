@@ -40,6 +40,7 @@ jobs:
         run: uv sync
 
       - name: Build with PyInstaller
+        shell: bash
         run: |
           uv run pyinstaller \
             --onefile \
