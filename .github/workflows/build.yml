@@ -40,7 +40,21 @@ jobs:
         run: uv sync
 
       - name: Build with PyInstaller
-        run: uv run pyinstaller --onefile --name clipboard-tool ${{ matrix.pyinstaller_args }} main.py
+        run: |
+          uv run pyinstaller \
+            --onefile \
+            --name clipboard-tool \
+            --strip \
+            --exclude-module matplotlib \
+            --exclude-module numpy \
+            --exclude-module scipy \
+            --exclude-module pandas \
+            --exclude-module tkinter \
+            --exclude-module unittest \
+            --exclude-module pydoc \
+            --exclude-module doctest \
+            ${{ matrix.pyinstaller_args }} \
+            main.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
