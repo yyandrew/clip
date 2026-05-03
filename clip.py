@@ -209,18 +209,36 @@ class ClipboardApp(QMainWindow):
                 
                 try:
                     pixmap = QPixmap()
-                    pixmap.loadFromData(blob)
+                    if not pixmap.loadFromData(blob):
+                        print("[WARN] 无法加载图片数据")
+                        item.setToolTip("图片格式无效")
+                        continue
+                    
+                    if pixmap.isNull():
+                        print("[WARN] 图片数据为空")
+                        item.setToolTip("图片数据为空")
+                        continue
+                    
                     scaled_pix = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio)
+                    if scaled_pix.isNull():
+                        print("[WARN] 图片缩放失败")
+                        item.setToolTip("图片处理失败")
+                        continue
 
                     ba = QByteArray()
                     bu = QBuffer(ba)
                     bu.open(QIODevice.OpenModeFlag.WriteOnly)
-                    scaled_pix.save(bu, "PNG")
+                    if not scaled_pix.save(bu, "PNG"):
+                        print("[WARN] 图片编码失败")
+                        item.setToolTip("图片编码失败")
+                        continue
                     b64 = ba.toBase64().data().decode()
 
                     item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
                 except Exception as e:
                     print(f"[ERROR] 图片预览生成失败: {e}")
+                    import traceback
+                    traceback.print_exc()
                     item.setToolTip("图片预览生成失败")
             else:
                 # 如果是文本
