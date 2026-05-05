@@ -2,29 +2,17 @@ import sys
 import ast
 import datetime
 import base64
-import traceback
-import logging
 from io import BytesIO
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget,
                              QLineEdit, QListWidget, QListWidgetItem, QLabel,
                              QSystemTrayIcon, QMenu, QToolTip)
 from PyQt6.QtGui import QAction, QPixmap, QImage
-from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray, QBuffer, QIODevice, qInstallMessageHandler
+from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray, QBuffer, QIODevice
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
+from pynput.keyboard import Controller, Key
 
-# 延迟导入 pynput，避免打包后 X11 连接问题
-keyboard = None
-
-def get_keyboard():
-    global keyboard
-    if keyboard is None:
-        from pynput.keyboard import Controller, Key
-        keyboard = Controller()
-    return keyboard, Key
-
-def debug_print(msg):
-    """强制打印到 stderr"""
-    print(msg, file=sys.stderr, flush=True)
+# 键盘控制器，用于模拟粘贴动作
+keyboard = Controller()
 
 class ClipboardApp(QMainWindow):
     def __init__(self):
@@ -43,15 +31,13 @@ class ClipboardApp(QMainWindow):
 
         # 初始加载
         self.refresh_list()
-        debug_print("[DEBUG] 跳过托盘图标初始化（调试模式）")
-        # self.create_tray_icon()
+        self.create_tray_icon()
 
     def init_db(self):
         import os
         config_dir = os.path.expanduser("~/.config/clip")
         os.makedirs(config_dir, exist_ok=True)
         db_path = os.path.join(config_dir, "clips_pro.db")
-        print(f"[DEBUG] 数据库路径: {db_path}")
         db = QSqlDatabase.addDatabase("QSQLITE")
         db.setDatabaseName(db_path)
         db.open()
@@ -69,12 +55,6 @@ class ClipboardApp(QMainWindow):
         """)
         if not ok:
             print(f"[ERROR] 建表失败: {query.lastError().text()}")
-        else:
-            # 验证表结构
-            check = QSqlQuery("PRAGMA index_list(history)")
-            print("[DEBUG] history 表索引:")
-            while check.next():
-                print(f"  - {check.value(1)} (unique={check.value(2)})")
 
     def setup_ui(self):
         central_widget = QWidget()
@@ -90,18 +70,17 @@ class ClipboardApp(QMainWindow):
         self.search_timer.timeout.connect(self._do_refresh)
         self.search_bar.textChanged.connect(self._on_search_text_changed)
         # 让搜索框拦截上下箭头，方便直接操作列表
-        # 临时禁用 eventFilter
-        # self.search_bar.installEventFilter(self)
+        self.search_bar.installEventFilter(self)
         layout.addWidget(self.search_bar)
 
         # 列表
         self.list_widget = QListWidget()
-        # 临时禁用样式表测试
-        # self.list_widget.setStyleSheet("""
-        #     QListWidget::item { border-bottom: 1px solid #eee; padding: 10px; }
-        #     QListWidget::item:selected { background: #e3f2fd; color: #1976d2; }
-        # """)
-        # self.list_widget.installEventFilter(self)
+        # 优化列表样式
+        self.list_widget.setStyleSheet("""
+            QListWidget::item { border-bottom: 1px solid #eee; padding: 10px; }
+            QListWidget::item:selected { background: #e3f2fd; color: #1976d2; }
+        """)
+        self.list_widget.installEventFilter(self)
         layout.addWidget(self.list_widget)
 
         self.statusBar().showMessage("按 Enter 粘贴并隐藏")
@@ -145,8 +124,6 @@ class ClipboardApp(QMainWindow):
             query.addBindValue(now)
             if not query.exec():
                 print(f"[ERROR] 文本插入失败: {query.lastError().text()}")
-            else:
-                print(f"[DEBUG] 文本插入成功: {text[:50]}")
 
         self.refresh_list()
 
@@ -160,133 +137,80 @@ class ClipboardApp(QMainWindow):
         self.refresh_list(getattr(self, '_pending_search_text', ''))
 
     def refresh_list(self, search_text=""):
-        debug_print(f"[DEBUG] refresh_list 开始，搜索词: '{search_text}'")
         self.list_widget.clear()
         if search_text:
-            debug_print("[DEBUG] 执行搜索 SQL")
             query = QSqlQuery()
             query.prepare("SELECT type, content, blob_data, timestamp FROM history WHERE content LIKE ? ORDER BY timestamp DESC LIMIT 50")
             query.addBindValue(f"%{search_text}%")
             if not query.exec():
-                debug_print(f"[ERROR] 搜索失败: {query.lastError().text()}")
+                print(f"[ERROR] 搜索失败: {query.lastError().text()}")
                 return
         else:
-            debug_print("[DEBUG] 执行全量 SQL")
             query = QSqlQuery("SELECT type, content, blob_data, timestamp FROM history ORDER BY timestamp DESC LIMIT 50")
 
-        row_count = 0
-        debug_print("[DEBUG] 开始遍历结果")
         while query.next():
-            row_count += 1
-            try:
-                c_type = query.value(0)
-                content = query.value(1)
-                blob = query.value(2)
-                time_str = query.value(3)
+            c_type = query.value(0)
+            content = query.value(1)
+            blob = query.value(2)
+            time_str = query.value(3)
+
+            item = QListWidgetItem(self.list_widget)
+
+            if c_type == 'image':
+                # 如果是图片，列表显示图标和时间
+                item.setText(f"🖼️ 图片记录 - {time_str}")
+                item.setData(Qt.ItemDataRole.UserRole, f"image:{time_str}")
                 
-                # 调试：打印每行数据的类型
-                print(f"[DEBUG] row {row_count}: type={c_type}, content_type={type(content)}, blob_type={type(blob)}, blob_len={len(blob) if blob else 0}")
-
-                item = QListWidgetItem(self.list_widget)
-
-                if c_type == 'image':
-                    debug_print(f"[DEBUG] 处理图片行 {row_count}")
-                    item.setText(f"🖼️ 图片记录 - {time_str}")
-                    # 使用字符串而非元组，避免 QVariant 转换问题
-                    item.setData(Qt.ItemDataRole.UserRole, f"image:{time_str}")
-                    
-                    # 临时跳过图片预览，测试是否导致崩溃
-                    item.setToolTip("图片预览已禁用（调试模式）")
-                    self.list_widget.addItem(item)
-                    continue
-                    
-                    # 严格检查 blob 是否有效
-                    if blob is None:
-                        print("[WARN] blob is None")
-                        item.setToolTip("图片数据缺失")
+                # 兼容旧数据：曾被误存为 str(bytes_repr)，尝试还原为 bytes
+                if isinstance(blob, str):
+                    try:
+                        blob = ast.literal_eval(blob)
+                    except Exception:
+                        item.setToolTip("图片数据损坏")
+                        self.list_widget.addItem(item)
+                        continue
+                
+                try:
+                    pixmap = QPixmap()
+                    if not pixmap.loadFromData(blob):
+                        item.setToolTip("图片格式无效")
                         self.list_widget.addItem(item)
                         continue
                     
-                    # 处理 PyQt6 QVariant 或空值
-                    blob_bytes = None
-                    if hasattr(blob, 'toByteArray'):
-                        blob_bytes = blob.toByteArray()
-                    elif isinstance(blob, (bytes, bytearray)):
-                        blob_bytes = bytes(blob)
-                    elif isinstance(blob, str):
-                        try:
-                            blob_bytes = ast.literal_eval(blob)
-                        except Exception:
-                            print("[WARN] blob str 解析失败")
-                            item.setToolTip("图片数据损坏")
-                            self.list_widget.addItem(item)
-                            continue
-                    else:
-                        print(f"[WARN] blob 类型不支持: {type(blob)}")
-                        item.setToolTip("图片数据类型错误")
-                        self.list_widget.addItem(item)
-                        continue
-                    
-                    if not blob_bytes or len(blob_bytes) == 0:
-                        print("[WARN] blob_bytes 为空")
+                    if pixmap.isNull():
                         item.setToolTip("图片数据为空")
                         self.list_widget.addItem(item)
                         continue
                     
-                    try:
-                        pixmap = QPixmap()
-                        if not pixmap.loadFromData(blob_bytes):
-                            print("[WARN] 无法加载图片数据")
-                            item.setToolTip("图片格式无效")
-                            self.list_widget.addItem(item)
-                            continue
-                        
-                        if pixmap.isNull():
-                            print("[WARN] 图片数据为空")
-                            item.setToolTip("图片数据为空")
-                            self.list_widget.addItem(item)
-                            continue
-                        
-                        scaled_pix = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio)
-                        if scaled_pix.isNull():
-                            print("[WARN] 图片缩放失败")
-                            item.setToolTip("图片处理失败")
-                            self.list_widget.addItem(item)
-                            continue
+                    scaled_pix = pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio)
+                    if scaled_pix.isNull():
+                        item.setToolTip("图片处理失败")
+                        self.list_widget.addItem(item)
+                        continue
 
-                        ba = QByteArray()
-                        bu = QBuffer(ba)
-                        bu.open(QIODevice.OpenModeFlag.WriteOnly)
-                        if not scaled_pix.save(bu, "PNG"):
-                            print("[WARN] 图片编码失败")
-                            item.setToolTip("图片编码失败")
-                            self.list_widget.addItem(item)
-                            continue
-                        b64 = ba.toBase64().data().decode()
+                    ba = QByteArray()
+                    bu = QBuffer(ba)
+                    bu.open(QIODevice.OpenModeFlag.WriteOnly)
+                    if not scaled_pix.save(bu, "PNG"):
+                        item.setToolTip("图片编码失败")
+                        self.list_widget.addItem(item)
+                        continue
+                    b64 = ba.toBase64().data().decode()
 
-                        item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
-                    except Exception as e:
-                        print(f"[ERROR] 图片预览生成失败: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        item.setToolTip("图片预览生成失败")
-                    self.list_widget.addItem(item)
-                else:
-                    short_text = content[:30].replace('\n', ' ') if content else ''
-                    if content and len(content) > 30:
-                        short_text += '...'
-                    item.setText(f"📄 {short_text}\n[{time_str}]")
-                    # 使用字符串而非元组，避免 QVariant 转换问题
-                    item.setData(Qt.ItemDataRole.UserRole, f"text:{content}")
-                    item.setToolTip(f"完整内容:\n{content}")
-                    self.list_widget.addItem(item)
-            except Exception as e:
-                print(f"[ERROR] 处理第 {row_count} 行时出错: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
-        
-        print(f"[DEBUG] refresh_list 完成，共 {row_count} 行")
+                    item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
+                except Exception as e:
+                    print(f"[ERROR] 图片预览生成失败: {e}")
+                    item.setToolTip("图片预览生成失败")
+                self.list_widget.addItem(item)
+            else:
+                # 如果是文本
+                short_text = content[:30].replace('\n', ' ') if content else ''
+                if content and len(content) > 30:
+                    short_text += '...'
+                item.setText(f"📄 {short_text}\n[{time_str}]")
+                item.setData(Qt.ItemDataRole.UserRole, f"text:{content}")
+                item.setToolTip(f"完整内容:\n{content}")
+                self.list_widget.addItem(item)
 
     def eventFilter(self, source, event):
         # 让搜索框支持上下箭头切换列表项，列表支持 Enter 粘贴
@@ -315,7 +239,7 @@ class ClipboardApp(QMainWindow):
         # 1. 拿到原始文本
         role_data = current_item.data(Qt.ItemDataRole.UserRole)
         if isinstance(role_data, str) and role_data.startswith('text:'):
-            text_to_paste = role_data[5:]  # 去掉 'text:' 前缀
+            text_to_paste = role_data[5:]
         else:
             return
 
@@ -326,7 +250,6 @@ class ClipboardApp(QMainWindow):
         self.hide()
 
         # 4. 模拟粘贴动作 (延迟一小会儿确保焦点切回原应用)
-        # 这就像 Go 里的 time.AfterFunc
         QTimer.singleShot(300, lambda: self.simulate_paste())
 
     def delete_selected_item(self):
@@ -357,12 +280,11 @@ class ClipboardApp(QMainWindow):
     def simulate_paste(self):
         # 模拟键盘按键 Ctrl+V (Windows/Linux) 或 Cmd+V (Mac)
         try:
-            kb, KeyClass = get_keyboard()
-            with kb.pressed(KeyClass.ctrl if sys.platform != 'darwin' else KeyClass.cmd):
-                kb.press('v')
-                kb.release('v')
-        except Exception as e:
-            debug_print(f"[ERROR] 模拟粘贴失败: {e}")
+            with keyboard.pressed(Key.ctrl if sys.platform != 'darwin' else Key.cmd):
+                keyboard.press('v')
+                keyboard.release('v')
+        except Exception:
+            pass
 
     def create_tray_icon(self):
         # 1. 创建托盘图标对象
@@ -402,9 +324,3 @@ class ClipboardApp(QMainWindow):
         self.show()
         self.activateWindow() # 强制获取焦点
         self.raise_()         # 移至顶层
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = ClipboardApp()
-    window.show()
-    sys.exit(app.exec())
