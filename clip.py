@@ -192,7 +192,8 @@ class ClipboardApp(QMainWindow):
                 if c_type == 'image':
                     debug_print(f"[DEBUG] 处理图片行 {row_count}")
                     item.setText(f"🖼️ 图片记录 - {time_str}")
-                    item.setData(Qt.ItemDataRole.UserRole, ('image', time_str))
+                    # 使用字符串而非元组，避免 QVariant 转换问题
+                    item.setData(Qt.ItemDataRole.UserRole, f"image:{time_str}")
                     
                     # 临时跳过图片预览，测试是否导致崩溃
                     item.setToolTip("图片预览已禁用（调试模式）")
@@ -275,7 +276,8 @@ class ClipboardApp(QMainWindow):
                     if content and len(content) > 30:
                         short_text += '...'
                     item.setText(f"📄 {short_text}\n[{time_str}]")
-                    item.setData(Qt.ItemDataRole.UserRole, ('text', content))
+                    # 使用字符串而非元组，避免 QVariant 转换问题
+                    item.setData(Qt.ItemDataRole.UserRole, f"text:{content}")
                     item.setToolTip(f"完整内容:\n{content}")
                     self.list_widget.addItem(item)
             except Exception as e:
@@ -312,8 +314,8 @@ class ClipboardApp(QMainWindow):
 
         # 1. 拿到原始文本
         role_data = current_item.data(Qt.ItemDataRole.UserRole)
-        if isinstance(role_data, tuple) and role_data[0] == 'text':
-            text_to_paste = role_data[1]
+        if isinstance(role_data, str) and role_data.startswith('text:'):
+            text_to_paste = role_data[5:]  # 去掉 'text:' 前缀
         else:
             return
 
@@ -332,14 +334,15 @@ class ClipboardApp(QMainWindow):
         if not current_item: return
 
         role_data = current_item.data(Qt.ItemDataRole.UserRole)
-        if not isinstance(role_data, tuple): return
+        if not isinstance(role_data, str): return
 
-        item_type, value = role_data
         query = QSqlQuery()
-        if item_type == 'text':
+        if role_data.startswith('text:'):
+            value = role_data[5:]
             query.prepare("DELETE FROM history WHERE content = ?")
             query.addBindValue(value)
-        elif item_type == 'image':
+        elif role_data.startswith('image:'):
+            value = role_data[6:]
             query.prepare("DELETE FROM history WHERE type = 'image' AND timestamp = ?")
             query.addBindValue(value)
         else:
