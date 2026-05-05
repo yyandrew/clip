@@ -55,8 +55,32 @@ jobs:
             ${{ matrix.pyinstaller_args }} \
             main.py
 
+      - name: Build test_no_sql (debug)
+        shell: bash
+        run: |
+          uv run pyinstaller \
+            --name test-no-sql \
+            --console \
+            --exclude-module matplotlib \
+            --exclude-module numpy \
+            --exclude-module scipy \
+            --exclude-module pandas \
+            --exclude-module tkinter \
+            --exclude-module unittest \
+            --exclude-module pydoc \
+            --exclude-module doctest \
+            --collect-all PyQt6 \
+            ${{ matrix.pyinstaller_args }} \
+            test_no_sql.py
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/clipboard-tool/
+
+      - name: Upload test artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-no-sql-${{ matrix.os }}
+          path: dist/test-no-sql/

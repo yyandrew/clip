@@ -38,6 +38,15 @@ if getattr(sys, 'frozen', False):
             if 'platforms' in dirs:
                 print(f"[DEBUG] 找到 platforms: {os.path.join(root, 'platforms')}", flush=True)
     
+    # 检查 SQL 驱动插件
+    sql_drivers_dir = os.path.join(os.environ.get('QT_PLUGIN_PATH', ''), 'sqldrivers')
+    if os.path.exists(sql_drivers_dir):
+        print(f"[DEBUG] SQL 驱动目录: {sql_drivers_dir}", flush=True)
+        for f in os.listdir(sql_drivers_dir):
+            print(f"[DEBUG]   - {f}", flush=True)
+    else:
+        print(f"[WARN] 找不到 SQL 驱动目录!", flush=True)
+    
     # 检查输入法插件（键盘输入必需）
     input_dir = os.path.join(os.environ.get('QT_PLUGIN_PATH', ''), 'platforminputcontexts')
     if os.path.exists(input_dir):
