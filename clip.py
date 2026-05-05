@@ -11,10 +11,16 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget,
 from PyQt6.QtGui import QAction, QPixmap, QImage
 from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray, QBuffer, QIODevice, qInstallMessageHandler
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
-from pynput.keyboard import Controller, Key
 
-# 键盘控制器，用于模拟粘贴动作
-keyboard = Controller()
+# 延迟导入 pynput，避免打包后 X11 连接问题
+keyboard = None
+
+def get_keyboard():
+    global keyboard
+    if keyboard is None:
+        from pynput.keyboard import Controller, Key
+        keyboard = Controller()
+    return keyboard, Key
 
 def debug_print(msg):
     """强制打印到 stderr"""
@@ -348,11 +354,12 @@ class ClipboardApp(QMainWindow):
     def simulate_paste(self):
         # 模拟键盘按键 Ctrl+V (Windows/Linux) 或 Cmd+V (Mac)
         try:
-            with keyboard.pressed(Key.ctrl if sys.platform != 'darwin' else Key.cmd):
-                keyboard.press('v')
-                keyboard.release('v')
+            kb, KeyClass = get_keyboard()
+            with kb.pressed(KeyClass.ctrl if sys.platform != 'darwin' else KeyClass.cmd):
+                kb.press('v')
+                kb.release('v')
         except Exception as e:
-            pass
+            debug_print(f"[ERROR] 模拟粘贴失败: {e}")
 
     def create_tray_icon(self):
         # 1. 创建托盘图标对象
