@@ -37,9 +37,25 @@ if getattr(sys, 'frozen', False):
         for root, dirs, files in os.walk(base_dir):
             if 'platforms' in dirs:
                 print(f"[DEBUG] 找到 platforms: {os.path.join(root, 'platforms')}", flush=True)
+    
+    # 检查输入法插件（键盘输入必需）
+    input_dir = os.path.join(os.environ.get('QT_PLUGIN_PATH', ''), 'platforminputcontexts')
+    if os.path.exists(input_dir):
+        print(f"[DEBUG] 输入法插件目录: {input_dir}", flush=True)
+        for f in os.listdir(input_dir):
+            print(f"[DEBUG]   - {f}", flush=True)
+    else:
+        print(f"[WARN] 找不到输入法插件目录!", flush=True)
+        # 搜索所有 platforminputcontexts
+        for root, dirs, files in os.walk(base_dir):
+            if 'platforminputcontexts' in dirs:
+                print(f"[DEBUG] 找到 platforminputcontexts: {os.path.join(root, 'platforminputcontexts')}", flush=True)
 
 # 禁用 GVFS/GIO 模块加载
 os.environ['GIO_MODULE_DIR'] = ''
+
+# 禁用 Qt 输入法插件（测试是否因此崩溃）
+os.environ['QT_IM_MODULE'] = 'none'
 
 print("[DEBUG] 导入 PyQt6...", flush=True)
 
