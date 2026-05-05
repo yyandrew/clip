@@ -51,6 +51,9 @@ print("[DEBUG] 导入完成，创建 QApplication", flush=True)
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     print("[DEBUG] QApplication 创建成功", flush=True)
+    # 强制使用 Fusion 风格，避免原生风格兼容性问题
+    app.setStyle('Fusion')
+    print("[DEBUG] 设置 Fusion 风格", flush=True)
     window = ClipboardApp()
     print("[DEBUG] ClipboardApp 创建成功", flush=True)
     window.show()
