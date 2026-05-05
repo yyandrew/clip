@@ -13,31 +13,12 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QByteArray, QBuffer, QIODevice, qIns
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 from pynput.keyboard import Controller, Key
 
-# 设置日志
-logging.basicConfig(
-    filename='/tmp/clipboard-tool.log',
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-def log_exception(exc_type, exc_value, exc_tb):
-    """全局异常钩子：捕获所有未处理异常并写入日志"""
-    err_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    logger.critical(f"未捕获异常:\n{err_msg}")
-    # 同时打印到终端
-    sys.__stderr__.write(err_msg)
-
-sys.excepthook = log_exception
-
-def qt_message_handler(mode, context, message):
-    """捕获 Qt 内部消息"""
-    logger.debug(f"Qt [{mode}]: {message}")
-
-qInstallMessageHandler(qt_message_handler)
-
 # 键盘控制器，用于模拟粘贴动作
 keyboard = Controller()
+
+def debug_print(msg):
+    """强制打印到 stderr"""
+    print(msg, file=sys.stderr, flush=True)
 
 class ClipboardApp(QMainWindow):
     def __init__(self):
@@ -171,18 +152,22 @@ class ClipboardApp(QMainWindow):
         self.refresh_list(getattr(self, '_pending_search_text', ''))
 
     def refresh_list(self, search_text=""):
+        debug_print(f"[DEBUG] refresh_list 开始，搜索词: '{search_text}'")
         self.list_widget.clear()
         if search_text:
+            debug_print("[DEBUG] 执行搜索 SQL")
             query = QSqlQuery()
             query.prepare("SELECT type, content, blob_data, timestamp FROM history WHERE content LIKE ? ORDER BY timestamp DESC LIMIT 50")
             query.addBindValue(f"%{search_text}%")
             if not query.exec():
-                print(f"[ERROR] 搜索失败: {query.lastError().text()}")
+                debug_print(f"[ERROR] 搜索失败: {query.lastError().text()}")
                 return
         else:
+            debug_print("[DEBUG] 执行全量 SQL")
             query = QSqlQuery("SELECT type, content, blob_data, timestamp FROM history ORDER BY timestamp DESC LIMIT 50")
 
         row_count = 0
+        debug_print("[DEBUG] 开始遍历结果")
         while query.next():
             row_count += 1
             try:
@@ -197,8 +182,14 @@ class ClipboardApp(QMainWindow):
                 item = QListWidgetItem(self.list_widget)
 
                 if c_type == 'image':
+                    debug_print(f"[DEBUG] 处理图片行 {row_count}")
                     item.setText(f"🖼️ 图片记录 - {time_str}")
                     item.setData(Qt.ItemDataRole.UserRole, ('image', time_str))
+                    
+                    # 临时跳过图片预览，测试是否导致崩溃
+                    item.setToolTip("图片预览已禁用（调试模式）")
+                    self.list_widget.addItem(item)
+                    continue
                     
                     # 严格检查 blob 是否有效
                     if blob is None:
