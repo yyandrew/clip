@@ -84,7 +84,8 @@ class ClipboardApp(QMainWindow):
         self.search_timer.timeout.connect(self._do_refresh)
         self.search_bar.textChanged.connect(self._on_search_text_changed)
         # 让搜索框拦截上下箭头，方便直接操作列表
-        self.search_bar.installEventFilter(self)
+        # 临时禁用 eventFilter
+        # self.search_bar.installEventFilter(self)
         layout.addWidget(self.search_bar)
 
         # 列表
@@ -94,7 +95,7 @@ class ClipboardApp(QMainWindow):
         #     QListWidget::item { border-bottom: 1px solid #eee; padding: 10px; }
         #     QListWidget::item:selected { background: #e3f2fd; color: #1976d2; }
         # """)
-        self.list_widget.installEventFilter(self)
+        # self.list_widget.installEventFilter(self)
         layout.addWidget(self.list_widget)
 
         self.statusBar().showMessage("按 Enter 粘贴并隐藏")
