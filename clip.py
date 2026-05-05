@@ -37,7 +37,8 @@ class ClipboardApp(QMainWindow):
 
         # 初始加载
         self.refresh_list()
-        self.create_tray_icon()
+        debug_print("[DEBUG] 跳过托盘图标初始化（调试模式）")
+        # self.create_tray_icon()
 
     def init_db(self):
         import os
