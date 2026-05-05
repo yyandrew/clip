@@ -89,11 +89,11 @@ class ClipboardApp(QMainWindow):
 
         # 列表
         self.list_widget = QListWidget()
-        # 优化列表样式
-        self.list_widget.setStyleSheet("""
-            QListWidget::item { border-bottom: 1px solid #eee; padding: 10px; }
-            QListWidget::item:selected { background: #e3f2fd; color: #1976d2; }
-        """)
+        # 临时禁用样式表测试
+        # self.list_widget.setStyleSheet("""
+        #     QListWidget::item { border-bottom: 1px solid #eee; padding: 10px; }
+        #     QListWidget::item:selected { background: #e3f2fd; color: #1976d2; }
+        # """)
         self.list_widget.installEventFilter(self)
         layout.addWidget(self.list_widget)
 
