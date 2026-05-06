@@ -7,36 +7,19 @@ on:
     branches: [main, master]
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact_name: clipboard-tool-linux
-            pyinstaller_args: "--hidden-import=pynput.keyboard._xorg --hidden-import=pynput.mouse._xorg"
-          - os: macos-latest
-            artifact_name: clipboard-tool-macos
-            pyinstaller_args: "--hidden-import=pynput.keyboard._darwin --hidden-import=pynput.mouse._darwin"
-          - os: windows-latest
-            artifact_name: clipboard-tool-windows
-            pyinstaller_args: "--hidden-import=pynput.keyboard._win32 --hidden-import=pynput.mouse._win32"
-
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-
       - name: Set up Python
         run: uv python install
-
       - name: Install dependencies
         run: uv sync
-
-      - name: Build with PyInstaller (onedir mode)
+      - name: Build with PyInstaller
         shell: bash
         run: |
           uv run pyinstaller \
@@ -52,14 +35,32 @@ jobs:
             --exclude-module doctest \
             --hidden-import PyQt6.QtSql \
             --collect-all PyQt6 \
-            ${{ matrix.pyinstaller_args }} \
+            --hidden-import=pynput.keyboard._xorg \
+            --hidden-import=pynput.mouse._xorg \
             main.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipboard-tool-linux
+          path: dist/clipboard-tool/
 
-      - name: Build test_no_sql (debug)
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Set up Python
+        run: uv python install
+      - name: Install dependencies
+        run: uv sync
+      - name: Build with PyInstaller
         shell: bash
         run: |
           uv run pyinstaller \
-            --name test-no-sql \
+            --name clipboard-tool \
             --console \
             --exclude-module matplotlib \
             --exclude-module numpy \
@@ -69,18 +70,131 @@ jobs:
             --exclude-module unittest \
             --exclude-module pydoc \
             --exclude-module doctest \
+            --hidden-import PyQt6.QtSql \
             --collect-all PyQt6 \
-            ${{ matrix.pyinstaller_args }} \
-            test_no_sql.py
-
+            --hidden-import=pynput.keyboard._win32 \
+            --hidden-import=pynput.mouse._win32 \
+            main.py
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
+          name: clipboard-tool-windows
           path: dist/clipboard-tool/
 
-      - name: Upload test artifact
+  build-macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Set up Python
+        run: uv python install
+      - name: Install dependencies
+        run: uv sync
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          uv run pyinstaller \
+            --name clipboard-tool \
+            --console \
+            --exclude-module matplotlib \
+            --exclude-module numpy \
+            --exclude-module scipy \
+            --exclude-module pandas \
+            --exclude-module tkinter \
+            --exclude-module unittest \
+            --exclude-module pydoc \
+            --exclude-module doctest \
+            --hidden-import PyQt6.QtSql \
+            --collect-all PyQt6 \
+            --hidden-import=pynput.keyboard._darwin \
+            --hidden-import=pynput.mouse._darwin \
+            main.py
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: test-no-sql-${{ matrix.os }}
-          path: dist/test-no-sql/
+          name: clipboard-tool-macos-arm64
+          path: dist/clipboard-tool/
+
+  build-macos-x86_64:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - name: Set up Python
+        run: uv python install
+      - name: Install dependencies
+        run: uv sync
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          uv run pyinstaller \
+            --name clipboard-tool \
+            --console \
+            --exclude-module matplotlib \
+            --exclude-module numpy \
+            --exclude-module scipy \
+            --exclude-module pandas \
+            --exclude-module tkinter \
+            --exclude-module unittest \
+            --exclude-module pydoc \
+            --exclude-module doctest \
+            --hidden-import PyQt6.QtSql \
+            --collect-all PyQt6 \
+            --hidden-import=pynput.keyboard._darwin \
+            --hidden-import=pynput.mouse._darwin \
+            main.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipboard-tool-macos-x86_64
+          path: dist/clipboard-tool/
+
+  merge-macos-universal:
+    needs: [build-macos-arm64, build-macos-x86_64]
+    runs-on: macos-latest
+    steps:
+      - name: Download arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: clipboard-tool-macos-arm64
+          path: dist-arm64/
+      - name: Download x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: clipboard-tool-macos-x86_64
+          path: dist-x86_64/
+      - name: Merge into Universal Binary
+        run: |
+          mkdir -p dist-universal/clipboard-tool
+          # 复制 arm64 的所有文件作为基础
+          cp -R dist-arm64/clipboard-tool/* dist-universal/clipboard-tool/
+          
+          # 合并主可执行文件
+          lipo -create \
+            dist-arm64/clipboard-tool/clipboard-tool \
+            dist-x86_64/clipboard-tool/clipboard-tool \
+            -output dist-universal/clipboard-tool/clipboard-tool
+          
+          # 合并所有 Mach-O 文件（包括 .dylib 和 .so）
+          find dist-arm64/clipboard-tool -type f | while read file; do
+            rel_path="${file#$PWD/dist-arm64/}"
+            x86_file="dist-x86_64/$rel_path"
+            universal_file="dist-universal/$rel_path"
+            
+            if [ -f "$x86_file" ] && file "$file" | grep -q "Mach-O"; then
+              lipo -create "$file" "$x86_file" -output "$universal_file"
+            fi
+          done
+          
+          chmod +x dist-universal/clipboard-tool/clipboard-tool
+      - name: Upload universal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipboard-tool-macos
+          path: dist-universal/clipboard-tool/
