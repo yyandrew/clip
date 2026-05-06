@@ -25,12 +25,9 @@ class ClipboardApp(QMainWindow):
         self.clipboard = QApplication.clipboard()
         self.clipboard.dataChanged.connect(self.handle_clipboard_change)
 
-        # macOS 下 QClipboard.dataChanged 在后台可能不触发，添加轮询兜底
+        # 追踪剪贴板内容，用于去重
         self._last_clipboard_text = ""
         self._last_clipboard_image = b""
-        self._clipboard_poll_timer = QTimer(self)
-        self._clipboard_poll_timer.timeout.connect(self._poll_clipboard)
-        self._clipboard_poll_timer.start(500)  # 每 500ms 检查一次
 
         # 初始加载
         self.refresh_list()
@@ -99,25 +96,6 @@ class ClipboardApp(QMainWindow):
         if event.type() == event.Type.WindowDeactivate:
             self.hide()
         super().changeEvent(event)
-
-    def _poll_clipboard(self):
-        if not self.isVisible():
-            mime_data = self.clipboard.mimeData()
-            if mime_data.hasText():
-                text = mime_data.text()
-                if text != self._last_clipboard_text:
-                    self._last_clipboard_text = text
-                    self.handle_clipboard_change()
-            elif mime_data.hasImage():
-                image = self.clipboard.image()
-                byte_array = QByteArray()
-                buffer = QBuffer(byte_array)
-                buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-                image.save(buffer, "PNG")
-                data = bytes(byte_array)
-                if data != self._last_clipboard_image:
-                    self._last_clipboard_image = data
-                    self.handle_clipboard_change()
 
     def handle_clipboard_change(self):
         mime_data = self.clipboard.mimeData()
@@ -312,13 +290,39 @@ class ClipboardApp(QMainWindow):
                 keyboard.press('v')
                 keyboard.release('v')
 
+    def _on_copy_hotkey(self):
+        # 延迟 200ms 等系统完成复制，再检查剪贴板
+        QTimer.singleShot(200, self._check_clipboard_update)
+
+    def _check_clipboard_update(self):
+        mime_data = self.clipboard.mimeData()
+        if mime_data.hasText():
+            text = mime_data.text()
+            if text != self._last_clipboard_text:
+                self.handle_clipboard_change()
+        elif mime_data.hasImage():
+            image = self.clipboard.image()
+            byte_array = QByteArray()
+            buffer = QBuffer(byte_array)
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            image.save(buffer, "PNG")
+            data = bytes(byte_array)
+            if data != self._last_clipboard_image:
+                self.handle_clipboard_change()
+
     def _start_hotkey_listener(self):
         def on_press(key):
             self._hotkey_mods.add(key)
+            
+            # 检测 Cmd+C (macOS 复制快捷键)
+            is_cmd = any(k in self._hotkey_mods for k in (pynput_kb.Key.cmd, pynput_kb.Key.cmd_l, pynput_kb.Key.cmd_r))
+            is_c = getattr(key, 'char', None) == 'c'
+            if is_cmd and is_c:
+                self._on_copy_hotkey()
+            
+            # 检测 Ctrl+Alt+C (显示窗口)
             is_ctrl = any(k in self._hotkey_mods for k in (pynput_kb.Key.ctrl, pynput_kb.Key.ctrl_l, pynput_kb.Key.ctrl_r))
             is_alt = any(k in self._hotkey_mods for k in (pynput_kb.Key.alt, pynput_kb.Key.alt_l, pynput_kb.Key.alt_r))
-            is_c = getattr(key, 'char', None) == 'c'
-            
             if is_ctrl and is_alt and is_c:
                 QTimer.singleShot(0, self.show_normal)
 
