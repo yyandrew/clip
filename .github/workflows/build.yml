@@ -125,7 +125,7 @@ jobs:
       - name: Build x86_64
         run: |
           X86_PYTHON="$HOME/miniconda-x86/envs/x86_env/bin/python"
-          arch -x86_64 "$X86_PYTHON" -m pip install uv pyinstaller pynput PyQt6
+          arch -x86_64 "$X86_PYTHON" -m pip install uv pyinstaller pynput PyQt6 macholib
           arch -x86_64 "$X86_PYTHON" -m uv pip sync pyproject.toml 2>/dev/null || true
           arch -x86_64 "$X86_PYTHON" -m PyInstaller \
             --name clipboard-tool \
