@@ -121,7 +121,7 @@ jobs:
         run: |
           curl -fsSL -o miniforge.sh https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-MacOSX-x86_64.sh
           bash miniforge.sh -b -p $HOME/miniconda-x86
-          $HOME/miniconda-x86/bin/conda create -n x86_env python=3.12 -y
+          $HOME/miniconda-x86/bin/conda create -n x86_env python=3.12 pip -y
       - name: Build x86_64
         run: |
           X86_PYTHON="$HOME/miniconda-x86/envs/x86_env/bin/python"
