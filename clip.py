@@ -163,7 +163,7 @@ class ClipboardApp(QMainWindow):
 
             if c_type == 'image':
                 # 如果是图片，列表显示图标和时间
-                item.setText(f"🖼️ 图片记录 - {time_str}")
+                item.setText(f"🖼️ 图片记录")
                 item.setData(Qt.ItemDataRole.UserRole, ('image', time_str))
                 # 关键：ToolTip 支持 HTML。我们将图片转为 Base64 嵌入 HTML
                 # 兼容旧数据：曾被误存为 str(bytes_repr)，尝试还原为 bytes
@@ -184,17 +184,17 @@ class ClipboardApp(QMainWindow):
                 scaled_pix.save(bu, "PNG")
                 b64 = ba.toBase64().data().decode()
 
-                item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br/>{time_str}</body></html>')
+                item.setToolTip(f'<html><body><img src="data:image/png;base64,{b64}" /><br />时间:{time_str}</body></html>')
             else:
                 # 如果是文本
                 short_text = content[:30].replace('\n', ' ')
                 if len(content) > 30:
                     short_text += '...'
-                item.setText(f"📄 {short_text}\n[{time_str}]")
+                item.setText(f"📄 {short_text}")
                 # 存储原始内容用于粘贴和删除
                 item.setData(Qt.ItemDataRole.UserRole, ('text', content))
                 # 文本的 ToolTip
-                item.setToolTip(f"完整内容:\n{content}")
+                item.setToolTip(f"完整内容:\n{content}\n时间:{time_str}")
 
             self.list_widget.addItem(item)
 
@@ -271,11 +271,11 @@ class ClipboardApp(QMainWindow):
             # 先切回之前的活动应用，再模拟粘贴
             prev_app = getattr(self, '_previous_app', None)
             if prev_app:
-                subprocess.run(['osascript', '-e', f'tell application "{prev_app}" to activate'], 
+                subprocess.run(['osascript', '-e', f'tell application "{prev_app}" to activate'],
                              capture_output=True, text=True)
                 import time
                 time.sleep(0.15)  # 等待应用切换完成
-            
+
             result = subprocess.run([
                 'osascript', '-e',
                 'tell application "System Events" to keystroke "v" using command down'
@@ -313,13 +313,13 @@ class ClipboardApp(QMainWindow):
     def _start_hotkey_listener(self):
         def on_press(key):
             self._hotkey_mods.add(key)
-            
+
             # 检测 Cmd+C (macOS 复制快捷键)
             is_cmd = any(k in self._hotkey_mods for k in (pynput_kb.Key.cmd, pynput_kb.Key.cmd_l, pynput_kb.Key.cmd_r))
             is_c = getattr(key, 'char', None) == 'c'
             if is_cmd and is_c:
                 self._on_copy_hotkey()
-            
+
             # 检测 Ctrl+Alt+C (显示窗口)
             is_ctrl = any(k in self._hotkey_mods for k in (pynput_kb.Key.ctrl, pynput_kb.Key.ctrl_l, pynput_kb.Key.ctrl_r))
             is_alt = any(k in self._hotkey_mods for k in (pynput_kb.Key.alt, pynput_kb.Key.alt_l, pynput_kb.Key.alt_r))
